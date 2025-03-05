@@ -21,6 +21,7 @@ import dev.jdtech.jellyfin.repository.JellyfinRepository
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.MediaStreamType
 import timber.log.Timber
 import javax.inject.Inject
@@ -57,9 +58,9 @@ class PlayerViewModel @Inject internal constructor(
         mediaSourceIndex: Int?,
     ): List<PlayerItem> = when (item) {
         is FindroidMovie -> movieToPlayerItem(item, playbackPosition, mediaSourceIndex)
-        is FindroidShow -> listOf(item.toPlayerItem(mediaSourceIndex, playbackPosition))
-        is FindroidSeason -> listOf(item.toPlayerItem(mediaSourceIndex, playbackPosition))
-        is FindroidEpisode -> listOf(item.toPlayerItem(mediaSourceIndex, playbackPosition))
+        is FindroidShow -> seriesToPlayerItems(item, playbackPosition, mediaSourceIndex)
+        is FindroidSeason -> seasonToPlayerItems(item, playbackPosition, mediaSourceIndex)
+        is FindroidEpisode -> episodeToPlayerItems(item, playbackPosition, mediaSourceIndex)
         else -> emptyList()
     }
 
@@ -68,6 +69,62 @@ class PlayerViewModel @Inject internal constructor(
         playbackPosition: Long,
         mediaSourceIndex: Int?,
     ) = listOf(item.toPlayerItem(mediaSourceIndex, playbackPosition))
+
+    private suspend fun seriesToPlayerItems(
+        item: FindroidShow,
+        playbackPosition: Long,
+        mediaSourceIndex: Int?,
+    ): List<PlayerItem> {
+        val nextUp = repository.getNextUp(item.id)
+
+        return if (nextUp.isEmpty()) {
+            repository
+                .getSeasons(item.id)
+                .flatMap { seasonToPlayerItems(it, playbackPosition, mediaSourceIndex) }
+        } else {
+            episodeToPlayerItems(nextUp.first(), playbackPosition, mediaSourceIndex)
+        }
+    }
+
+    private suspend fun seasonToPlayerItems(
+        item: FindroidSeason,
+        playbackPosition: Long,
+        mediaSourceIndex: Int?,
+    ): List<PlayerItem> {
+        return repository
+            .getEpisodes(
+                seriesId = item.seriesId,
+                seasonId = item.id,
+                fields = listOf(ItemFields.MEDIA_SOURCES),
+            )
+            .filter { it.sources.isNotEmpty() }
+            .filter { !it.missing }
+            .map { episode -> episode.toPlayerItem(mediaSourceIndex, playbackPosition) }
+    }
+
+    private suspend fun episodeToPlayerItems(
+        item: FindroidEpisode,
+        playbackPosition: Long,
+        mediaSourceIndex: Int?,
+    ): List<PlayerItem> {
+        // TODO Move user configuration to a separate class
+        val userConfig = try {
+            repository.getUserConfiguration()
+        } catch (_: Exception) {
+            null
+        }
+        return repository
+            .getEpisodes(
+                seriesId = item.seriesId,
+                seasonId = item.seasonId,
+                fields = listOf(ItemFields.MEDIA_SOURCES, ItemFields.CHAPTERS, ItemFields.TRICKPLAY),
+                startItemId = item.id,
+                limit = 1,
+            )
+            .filter { it.sources.isNotEmpty() }
+            .filter { !it.missing }
+            .map { episode -> episode.toPlayerItem(mediaSourceIndex, playbackPosition) }
+    }
 
     private suspend fun FindroidItem.toPlayerItem(
         mediaSourceIndex: Int?,
