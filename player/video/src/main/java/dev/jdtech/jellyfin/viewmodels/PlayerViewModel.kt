@@ -119,7 +119,7 @@ class PlayerViewModel @Inject internal constructor(
                 seasonId = item.seasonId,
                 fields = listOf(ItemFields.MEDIA_SOURCES, ItemFields.CHAPTERS, ItemFields.TRICKPLAY),
                 startItemId = item.id,
-                limit = if (userConfig?.enableNextEpisodeAutoPlay != false) null else 1,
+                limit = 1,
             )
             .filter { it.sources.isNotEmpty() }
             .filter { !it.missing }
