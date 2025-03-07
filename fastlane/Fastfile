@@ -1,8 +1,8 @@
 default_platform(:android)
 
 platform :android do
-  desc "Build and publish"
-  lane :publish do
+  desc "Build"
+  lane :build do
     gradle(task: "clean")
     gradle(
       task: "app:phone:assemble",
